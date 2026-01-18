@@ -1,4 +1,5 @@
 import { goto } from '$app/navigation';
+import { resolve } from '$app/paths';
 import { browser } from '$app/environment';
 import socket from '$lib/socket';
 import { playerStore } from '$lib/stores/player';
@@ -10,22 +11,22 @@ class LiveNavigation {
 
 		socket?.on('change-screen', (data) => {
 			if (data.screen === 'waiting-room') {
-				goto('/waiting-room');
+				goto(resolve('/waiting-room'));
 			} else if (data.screen === 'loading') {
 				const { message } = data;
 				gameStore.update(state => ({ ...state, loadingMessage: message || '' }));
-				goto('/loading');
+				goto(resolve('/loading'));
 			} else if (data.screen === 'question') {
 				const { text, id, category } = data;
 				gameStore.update(state => ({ ...state, currentQuestion: text || null }));
-				goto('/question');
+				goto(resolve('/question'));
 			} else if (data.screen === 'voting') {
 				const { answers, count } = data;
 				console.log('Received answers for voting:', data);
 				gameStore.update(state => ({ ...state, answers: answers || [], aiAnswerCount: count || 2 }));
-				goto('/voting');
+				goto(resolve('/voting'));
 			} else if (data.screen === 'results') {
-				goto('/results');
+				goto(resolve('/results'));
 			}
 		});
 
