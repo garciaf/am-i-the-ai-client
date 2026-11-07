@@ -42,27 +42,28 @@
 </script>
 
 <div class="max-w-4xl mx-auto">
-	<div class="border-2 border-green-400 p-8 bg-slate-800">
+	<div class="border-2 border-lab-steel p-8 bg-lab-panel rounded-lg">
 		<div class="mb-6">
-			<div class="text-green-300">&gt; PHASE: VOTING</div>
-			<div class="text-sm text-green-400 mt-2">QUESTION: {$gameStore.currentQuestion}</div>
+			<div class="text-lab-ink-soft">&gt; PHASE: VOTING</div>
+			<div class="text-sm text-lab-ink mt-2">QUESTION: {$gameStore.currentQuestion}</div>
 		</div>
 
 		<div class="mb-6">
-			<div class="text-green-300 mb-4">&gt; SELECT THE ANSWER YOU THINK IS FROM AN AI:</div>
+			<div class="text-lab-ink-soft mb-4">&gt; SELECT THE ANSWER YOU THINK IS FROM AN AI:</div>
 
 			<div class="space-y-4">
 				{#each $gameStore.answers as answer}
 					<button
 						onclick={() => voteForAnswer(answer)}
 						disabled={hasVoted}
-						class="w-full text-left bg-slate-900 border-2 p-4 transition-all disabled:opacity-50"
-						class:border-red-500={selectedAnswers.some(a => a.id === answer.id)}
-						class:border-green-400={!selectedAnswers.some(a => a.id === answer.id)}
-						class:hover:border-green-300={!selectedAnswers.some(a => a.id === answer.id)}
+						class="w-full text-left bg-lab-bg border-2 p-4 transition-all disabled:opacity-50 rounded-lg"
+						class:border-lab-cyan={selectedAnswers.some(a => a.id === answer.id)}
+						class:bg-cyan-50={selectedAnswers.some(a => a.id === answer.id)}
+						class:border-lab-steel={!selectedAnswers.some(a => a.id === answer.id)}
+						class:hover:border-lab-cyan={!selectedAnswers.some(a => a.id === answer.id)}
 					>
-						<div class="text-green-300 text-sm mb-2">&gt; RESPONSE #{$gameStore.answers.indexOf(answer) + 1}</div>
-						<div class="text-green-400">{answer.text}</div>
+						<div class="text-lab-ink-soft text-sm mb-2">&gt; RESPONSE #{$gameStore.answers.indexOf(answer) + 1}</div>
+						<div class="text-lab-ink">{answer.text}</div>
 					</button>
 				{/each}
 			</div>
@@ -71,12 +72,12 @@
 		<button
 			onclick={submitVote}
 			disabled={selectedAnswers.length == 0}
-			class="w-full bg-green-400 text-slate-900 p-4 font-bold text-xl hover:bg-green-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+			class="w-full bg-lab-cyan text-white p-4 font-bold text-xl hover:bg-lab-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors rounded-lg"
 		>
 			[SUBMIT VOTE]
 		</button>
 
-		<div class="mt-4 text-green-300 text-sm text-center">
+		<div class="mt-4 text-lab-ink-soft text-sm text-center">
 			&gt; CHOOSE CAREFULLY - YOU ONLY GET ONE VOTE
 		</div>
 	</div>

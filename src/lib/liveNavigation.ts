@@ -61,9 +61,6 @@ class LiveNavigation {
 		// @ts-ignore
 		const navType = navEntries[0]?.type || performance.navigation?.type;
 
-		if (navType === 'reload') {
-			socket?.emit('player-reconnected', { message: 'Page was refreshed' });
-		}
 
 		if (sessionStorage.getItem('refreshing') === 'true') {
 			sessionStorage.removeItem('refreshing');

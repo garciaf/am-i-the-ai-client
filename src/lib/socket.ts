@@ -1,297 +1,138 @@
 import { browser } from '$app/environment';
-import { get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
+import { io, type Socket as IoSocket } from 'socket.io-client';
 import { playerStore } from '$lib/stores/player';
 
-const websocketUrl = import.meta.env.VITE_WEBSOCKET_URL;
+// Lobby server (socket.io), e.g. http://127.0.0.1:5678 or https://game-lobby-server.fly.dev
+const serverUrl = import.meta.env.VITE_WEBSOCKET_URL;
 
-type EventPayload = {
-  event: string;
-  data: any;
-  from: string | null;
-  to: string | null;
-  lobbyId?: string | null;
-};
+export type ConnectionState = 'connecting' | 'connected' | 'joining' | 'joined' | 'disconnected' | 'error';
+export const connection = writable<{ state: ConnectionState; message?: string }>({ state: 'connecting' });
 
-type Callback = (...args: any[]) => void;
+type Callback = (data: any) => void;
 
+/**
+ * Same protocol as the Godot game (and Who is the Smart Cookie):
+ *   join-lobby { lobbyId, from } -> joined-lobby { clientId, lobbyId }
+ *   then every message is { type: 'message', from, lobbyId, to, data }
+ * Listeners registered with on() receive the message's `data`.
+ */
 class Socket {
-  private socket: WebSocket | null = null;
-  private listeners: Map<string, Callback[]>;
-  public disconnected = true;
+	private socket: IoSocket;
+	private listeners = new Map<string, Callback[]>();
+	private pendingJoin: { lobbyId: string; name: string } | null = null;
+	private rejoining = false;
 
-  // Reconnection config
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-  private reconnectDelay = 1000;
-  private maxReconnectDelay = 30000;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private intentionalClose = false;
+	constructor() {
+		this.socket = io(serverUrl, { transports: ['websocket', 'polling'] });
 
-  // Heartbeat config
-  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
-  private heartbeatTimeout: ReturnType<typeof setTimeout> | null = null;
-  private readonly HEARTBEAT_INTERVAL = 25000;
-  private readonly HEARTBEAT_TIMEOUT = 5000;
+		this.socket.on('connect', () => this.onConnect());
+		this.socket.on('disconnect', (reason) => {
+			console.warn('[Socket] Disconnected:', reason);
+			connection.set({ state: 'disconnected', message: 'Connection lost, reconnecting...' });
+		});
+		this.socket.on('connect_error', (error) => {
+			console.error('[Socket] Connection error:', error.message);
+			connection.set({ state: 'error', message: `Cannot reach the lobby server (${error.message})` });
+		});
 
-  // Lobby state tracking
-  private currentLobbyId: string | null = null;
-  private shouldReconnectToLobby: boolean = true;
+		this.socket.onAny((event: string, envelope: any) => {
+			console.debug('[Socket] Received', event, envelope);
+			const data = envelope && typeof envelope === 'object' && 'data' in envelope ? envelope.data : envelope;
+			(this.listeners.get(event) || []).forEach((cb) => cb(data ?? {}));
+		});
 
-  constructor() {
-    this.listeners = new Map();
-    this.connect();
-  }
+		this.on('joined-lobby', (data) => this.onJoinedLobby(data));
+		this.on('lobby-not-found', () => {
+			playerStore.update((state) => (state ? { ...state, lobbyId: '' } : state));
+			connection.set({ state: 'error', message: 'This lobby does not exist anymore' });
+		});
+	}
 
-  private connect(): void {
-    this.socket = new WebSocket(websocketUrl);
+	private onConnect(): void {
+		console.log('[Socket] Connected to lobby server');
+		connection.set({ state: 'connected' });
 
-    this.socket.addEventListener('message', (event: MessageEvent) => {
-      try {
-        const eventPayload: EventPayload = JSON.parse(event.data);
-        const callbacks = this.listeners.get(eventPayload.event) || [];
-        callbacks.forEach(cb => cb(eventPayload.data));
-      } catch (e) {
-        console.error('[Socket] Failed to parse message:', e);
-      }
-    });
+		if (this.pendingJoin) {
+			const { lobbyId, name } = this.pendingJoin;
+			this.pendingJoin = null;
+			this.joinLobby(lobbyId, name);
+			return;
+		}
 
-    this.socket.addEventListener('open', () => {
-      console.log('[Socket] Connected to server');
-      this.disconnected = false;
-      this.reconnectAttempts = 0;
-      this.reconnectDelay = 1000;
+		// Page reload or network drop: rejoin the lobby we were in
+		// (not on the home or join page: there the player is joining a new lobby)
+		const path = window.location.pathname.replace(/\/$/, '');
+		const onJoinPage = path === '' || path.endsWith('/lobby') || path === (import.meta.env.BASE_URL ?? '').replace(/\/$/, '');
+		const player = get(playerStore);
+		if (!onJoinPage && player?.lobbyId && player?.id) {
+			this.rejoining = true;
+			connection.set({ state: 'joining' });
+			this.socket.emit('join-lobby', { lobbyId: player.lobbyId, from: player.id });
+		}
+	}
 
-      // Start heartbeat after connection
-      this.startHeartbeat();
+	private onJoinedLobby(data: any): void {
+		const clientId = data.clientId ?? data.from;
+		const player = get(playerStore);
+		const lobbyId = data.lobbyId ?? player?.lobbyId ?? '';
+		playerStore.update((state) => ({ ...(state ?? { name: '' }), id: clientId, lobbyId }));
+		connection.set({ state: 'joined' });
 
-      const playerId = this.getPlayerId();
-      const lobbyId = this.getLobbyId();
+		if (this.rejoining) {
+			this.rejoining = false;
+			this.emit('player-reconnected');
+		} else {
+			this.emit('new-player', { name: get(playerStore)?.name ?? '' });
+		}
+	}
 
-      // Detect lobby transition
-      const lobbyChanged = this.currentLobbyId !== null && this.currentLobbyId !== lobbyId;
-      if (lobbyChanged) {
-        console.log('[Socket] Lobby changed from', this.currentLobbyId, 'to', lobbyId);
-        this.shouldReconnectToLobby = true; // Allow reconnecting to new lobby
-      }
+	/** Join a lobby as a new player. The game answers by sending us to the waiting room. */
+	public joinLobby(lobbyId: string, name: string): void {
+		playerStore.set({ name, lobbyId });
+		this.rejoining = false;
+		if (!this.socket.connected) {
+			this.pendingJoin = { lobbyId, name };
+			return;
+		}
+		connection.set({ state: 'joining' });
+		this.socket.emit('join-lobby', { lobbyId, from: null, name });
+	}
 
-      // Only attempt reconnection if we should reconnect and have valid credentials
-      if (playerId && lobbyId && lobbyId.trim() !== '' && this.shouldReconnectToLobby) {
-        console.log('[Socket] Attempting to reconnect to lobby:', lobbyId);
-        this.currentLobbyId = lobbyId; // Track the lobby we're connecting to
-        this.emit('reconnect', { clientId: playerId, lobbyId: lobbyId });
-      } else if (playerId && lobbyId && lobbyId.trim() !== '' && !this.shouldReconnectToLobby) {
-        console.log('[Socket] Skipping reconnect - lobby reconnection disabled');
-        this.emit('connect', { clientId: playerId });
-      } else if (playerId) {
-        console.log('[Socket] Connected without lobby');
-        this.currentLobbyId = null;
-        this.emit('connect', { clientId: playerId });
-      } else {
-        console.log('[Socket] Connected as new client');
-        this.currentLobbyId = null;
-        this.emit('connect', { clientId: null });
-      }
-    });
+	public leaveLobby(): void {
+		this.pendingJoin = null;
+		playerStore.update((state) => (state ? { ...state, lobbyId: '' } : state));
+	}
 
-    this.socket.addEventListener('close', (event) => {
-      this.disconnected = true;
-      this.stopHeartbeat(); // ← CRITICAL: Stop heartbeat when connection closes
-      console.warn('[Socket] Disconnected from server', event.code, event.reason);
+	public on(eventName: string, callback: Callback): void {
+		if (!this.listeners.has(eventName)) {
+			this.listeners.set(eventName, []);
+		}
+		this.listeners.get(eventName)?.push(callback);
+	}
 
-      if (!this.intentionalClose) {
-        this.attemptReconnect();
-      }
-    });
+	public emit(event: string, data: any = {}, to: string = ''): void {
+		const player = get(playerStore);
+		console.log(`[Socket] Emitting ${event}`, data);
+		this.socket.emit(event, {
+			type: 'message',
+			from: player?.id ?? null,
+			lobbyId: player?.lobbyId ?? null,
+			to,
+			data
+		});
+	}
 
-    this.socket.addEventListener('error', (error: Event) => {
-      console.error('[Socket] Error:', error);
-    });
-
-    this.on('connected', (data: any) => {
-      this.disconnected = false;
-      playerStore.update(state => ({ ...state, id: data.from }));
-    });
-
-    this.on('reconnected', (data: any) => {
-      console.debug('[Socket] Reconnected:', data);
-      this.disconnected = false;
-      playerStore.update(state => ({ ...state, id: data.from, lobbyId: data.lobbyId }));
-      this.emit('player-reconnected');
-    });
-
-    this.on('pong', () => {
-      console.debug('[Socket] Received pong from server');
-      if (this.heartbeatTimeout) {
-        clearTimeout(this.heartbeatTimeout);
-        this.heartbeatTimeout = null;
-      }
-    });
-
-    // Handle server events for invalid/non-existent lobbies
-    this.on('lobby-not-found', (data: any) => {
-      console.warn('[Socket] Lobby no longer exists:', data);
-      // Clear the lobbyId since the lobby doesn't exist
-      playerStore.update(state => ({ ...state, lobbyId: '' }));
-      this.currentLobbyId = null;
-      this.shouldReconnectToLobby = false;
-      this.disconnect(); // Stop trying to reconnect to non-existent lobby
-    });
-  }
-
-  private startHeartbeat(): void {
-    this.stopHeartbeat();
-    
-    console.log('[Socket] Starting heartbeat');
-    
-    this.heartbeatInterval = setInterval(() => {
-      if (this.socket?.readyState === WebSocket.OPEN) {
-        console.debug('[Socket] Sending ping');
-        this.emit('ping', { timestamp: Date.now() });
-        
-        this.heartbeatTimeout = setTimeout(() => {
-          console.warn('[Socket] No pong received, connection appears dead');
-          this.socket?.close();
-        }, this.HEARTBEAT_TIMEOUT);
-      }
-    }, this.HEARTBEAT_INTERVAL);
-  }
-
-  private stopHeartbeat(): void {
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
-    }
-    if (this.heartbeatTimeout) {
-      clearTimeout(this.heartbeatTimeout);
-      this.heartbeatTimeout = null;
-    }
-  }
-
-  private attemptReconnect(): void {
-    // Clean up any existing reconnect timer
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('[Socket] Max reconnection attempts reached');
-      const callbacks = this.listeners.get('max_reconnect_failed') || [];
-      callbacks.forEach(cb => cb({ attempts: this.reconnectAttempts }));
-      return;
-    }
-
-    this.reconnectAttempts++;
-    
-    const delay = Math.min(
-      this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1),
-      this.maxReconnectDelay
-    );
-
-    console.log(`[Socket] Attempting reconnection ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
-
-    const callbacks = this.listeners.get('reconnecting') || [];
-    callbacks.forEach(cb => cb({ 
-      attempt: this.reconnectAttempts, 
-      maxAttempts: this.maxReconnectAttempts,
-      delay 
-    }));
-
-    this.reconnectTimer = setTimeout(() => {
-      this.connect();
-    }, delay);
-  }
-
-  public disconnect(): void {
-    this.intentionalClose = true;
-    this.stopHeartbeat();
-
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    this.socket?.close();
-  }
-
-  public reconnect(): void {
-    // Stop any pending reconnection attempts
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-
-    // Reset state
-    this.reconnectAttempts = 0;
-    this.intentionalClose = false; // ← Set BEFORE closing
-
-    // Close existing connection if any
-    this.stopHeartbeat();
-    if (this.socket) {
-      // Temporarily set intentionalClose to true just for this close
-      this.intentionalClose = true;
-      this.socket.close();
-    }
-
-    // Now reset and connect
-    this.intentionalClose = false; // ← Reset for new connection
-    this.connect();
-  }
-
-  public leaveLobby(): void {
-    console.log('[Socket] Leaving lobby:', this.currentLobbyId);
-    // Clear the lobbyId from the store
-    playerStore.update(state => ({ ...state, lobbyId: '' }));
-    // Prevent reconnecting to the old lobby
-    this.currentLobbyId = null;
-    this.shouldReconnectToLobby = false;
-    // Reset reconnection attempts
-    this.reconnectAttempts = 0;
-  }
-
-  public joinLobby(lobbyId: string): void {
-    console.log('[Socket] Joining lobby:', lobbyId);
-    // Allow reconnection to this new lobby
-    this.currentLobbyId = lobbyId;
-    this.shouldReconnectToLobby = true;
-    // Reset reconnection attempts for fresh start
-    this.reconnectAttempts = 0;
-  }
-
-  public on(eventName: string, callback: Callback): void {
-    if (!this.listeners.has(eventName)) {
-      this.listeners.set(eventName, []);
-    }
-    this.listeners.get(eventName)?.push(callback);
-  }
-
-  public getPlayerId(): string | null {
-    return get(playerStore).id;
-  }
-
-  public getLobbyId(): string | null {
-    return get(playerStore).lobbyId;
-  }
-
-  public emit(event: string, data?: any, to?: string): void {
-    console.log(`[Socket] Emitting event: ${event}`, data);
-    const lobbyId = get(playerStore).lobbyId;
-    const playerId = get(playerStore).id;
-
-    const message: EventPayload = { event, data, from: playerId, to: to || null, lobbyId };
-    
-    if (this.socket?.readyState === WebSocket.OPEN) {
-      this.socket.send(JSON.stringify(message));
-    } else {
-      console.warn('[Socket] Socket is not open, message not sent');
-    }
-  }
+	public disconnect(): void {
+		this.socket.disconnect();
+	}
 }
 
 // Instantiate only in the browser
 let socket: Socket | null = null;
 
 if (browser) {
-  socket = new Socket();
+	socket = new Socket();
 }
 
 export default socket;

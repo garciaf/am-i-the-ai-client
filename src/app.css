@@ -1,1 +1,28 @@
+@import url('https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=VT323&display=swap');
 @import 'tailwindcss';
+
+/* Clean lab palette — same values as Palette.gd in the Godot game */
+@theme {
+	--color-lab-bg: #f4f7f8;
+	--color-lab-panel: #e1e8eb;
+	--color-lab-steel: #a3b3ba;
+	--color-lab-ink-soft: #5e6f76;
+	--color-lab-ink: #1f2b31;
+	--color-lab-cyan: #12a5b8;
+	--color-lab-cyan-dark: #0e8796;
+	--color-lab-orange: #e8743b;
+	--color-lab-green: #4db57e;
+	--color-lab-red: #d64f4f;
+
+	--font-machine: 'VT323', ui-monospace, monospace;
+	--font-human: 'Kalam', cursive;
+}
+
+/* VT323 is small for its size, so scale the whole UI up a bit */
+html {
+	font-size: 20px;
+}
+
+body {
+	background: var(--color-lab-bg);
+}

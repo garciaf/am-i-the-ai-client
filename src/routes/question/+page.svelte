@@ -32,18 +32,18 @@
 </script>
 
 <div class="max-w-4xl mx-auto">
-	<div class="border-2 border-green-400 p-8 bg-slate-800">
+	<div class="border-2 border-lab-steel p-8 bg-lab-panel rounded-lg">
 		<div class="mb-6 flex justify-between items-center">
-			<div class="text-green-300">&gt; PHASE: ANSWERING</div>
+			<div class="text-lab-ink-soft">&gt; PHASE: ANSWERING</div>
 		</div>
 
-		<div class="border-2 border-green-400 p-6 mb-6 bg-slate-900">
-			<div class="text-green-300 text-sm mb-2">&gt; QUESTION:</div>
-			<div class="text-xl text-green-400">{currentQuestion}</div>
+		<div class="border-2 border-lab-steel p-6 mb-6 bg-lab-bg rounded-lg">
+			<div class="text-lab-ink-soft text-sm mb-2">&gt; QUESTION:</div>
+			<div class="text-xl text-lab-ink">{currentQuestion}</div>
 		</div>
 
 		<div class="mb-6">
-			<label class="block text-green-300 mb-2" for="answer">
+			<label class="block text-lab-ink-soft mb-2" for="answer">
 				&gt; YOUR ANSWER:
 			</label>
 			<textarea
@@ -52,7 +52,7 @@
 				bind:value={answer}
 				placeholder="Type your answer here..."
 				rows="6"
-				class="w-full bg-slate-900 border-2 border-green-400 text-green-400 p-4 focus:outline-none focus:ring-2 focus:ring-green-300 resize-none"
+				class="font-human text-2xl w-full bg-lab-bg border-2 border-lab-steel text-lab-ink p-4 focus:outline-none focus:ring-2 focus:ring-lab-cyan resize-none rounded-lg"
 				data-gramm="false"
 				data-gramm_editor="false"
 				data-enable-grammarly="false"
@@ -64,12 +64,12 @@
 		<button
 			onclick={submitAnswer}
 			disabled={!answer.trim()}
-			class="w-full bg-green-400 text-slate-900 p-4 font-bold text-xl hover:bg-green-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+			class="w-full bg-lab-cyan text-white p-4 font-bold text-xl hover:bg-lab-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors rounded-lg"
 		>
 			[SUBMIT ANSWER]
 		</button>
 
-		<div class="mt-4 text-green-300 text-sm text-center">
+		<div class="mt-4 text-lab-ink-soft text-sm text-center">
 			&gt; ANSWER WILL AUTO-SUBMIT WHEN TIME EXPIRES
 		</div>
 	</div>

@@ -12,17 +12,6 @@
 		socket?.leaveLobby();
 	});
 
-  // ✅ Move socket event listeners inside onMount so they don't run on SSR
-  socket?.on('joined-lobby', (data) => {
-    const { lobbyId, clientId } = data;
-    playerStore.update(state => ({...state, lobbyId, id: clientId, name}));
-
-    if (socket) {
-      socket.emit('new-player', {
-        name: name,
-      });
-    }
-  });
 	function joinGame() {
 		if (name && lobbyId) {
 			playerStore.set({ name: name, id: crypto.randomUUID() });
@@ -40,9 +29,9 @@
 </script>
 
 <div class="max-w-2xl mx-auto">
-	<div class="border-2 border-green-400 p-8 bg-slate-800">
+	<div class="border-2 border-lab-steel p-8 bg-lab-panel rounded-lg">
 		<div class="mb-6">
-			<p class="text-green-300 mb-4">
+			<p class="text-lab-ink-soft mb-4">
 				&gt; INITIALIZING GAME PROTOCOL...<br/>
 				&gt; QUESTION.ANSWER.VOTE SEQUENCE READY<br/>
 				&gt; AWAITING USER INPUT...
@@ -51,7 +40,7 @@
 
 		<div class="space-y-6">
 			<div>
-				<label class="block text-green-400 mb-2" for="name">
+				<label class="block text-lab-ink mb-2" for="name">
 					&gt; ENTER USERNAME:
 				</label>
 				<input
@@ -59,13 +48,13 @@
 					type="text"
 					bind:value={name}
 					placeholder="PLAYER_001"
-					class="w-full bg-slate-900 border-2 border-green-400 text-green-400 p-3 focus:outline-none focus:ring-2 focus:ring-green-300"
+					class="font-human w-full bg-lab-bg border-2 border-lab-steel text-lab-ink p-3 focus:outline-none focus:ring-2 focus:ring-lab-cyan rounded-lg"
 				/>
 			</div>
 
-			<div class="border-t-2 border-green-400 pt-6">
+			<div class="border-t-2 border-lab-steel pt-6 rounded-lg">
 				<div>
-					<label class="block text-green-400 mb-2" for="lobbyId">
+					<label class="block text-lab-ink mb-2" for="lobbyId">
 						&gt; ENTER LOBBY CODE:
 					</label>
 					<input
@@ -73,32 +62,32 @@
 						type="text"
 						bind:value={lobbyId}
 						placeholder="ABC123"
-						class="w-full bg-slate-900 border-2 border-green-400 text-green-400 p-3 uppercase focus:outline-none focus:ring-2 focus:ring-green-300"
+						class="w-full bg-lab-bg border-2 border-lab-steel text-lab-ink p-3 uppercase focus:outline-none focus:ring-2 focus:ring-lab-cyan rounded-lg"
 					/>
 				</div>
 
 				<button
 					onclick={joinGame}
 					disabled={!name || !lobbyId}
-					class="w-full mt-4 bg-green-400 text-slate-900 p-3 font-bold hover:bg-green-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+					class="w-full mt-4 bg-lab-cyan text-white p-3 font-bold hover:bg-lab-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors rounded-lg"
 				>
 					[JOIN GAME]
 				</button>
 			</div>
 
-			<div class="text-center text-green-400">- OR -</div>
+			<div class="text-center text-lab-ink">- OR -</div>
 
 			<button
 				onclick={createGame}
 				disabled={!name}
-				class="w-full bg-slate-900 border-2 border-green-400 text-green-400 p-3 font-bold hover:bg-green-400 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+				class="w-full bg-lab-bg border-2 border-lab-steel text-lab-ink p-3 font-bold hover:bg-lab-cyan hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors rounded-lg"
 			>
 				[CREATE NEW GAME]
 			</button>
 		</div>
 	</div>
 
-	<div class="mt-8 text-center text-green-300 text-sm">
+	<div class="mt-8 text-center text-lab-ink-soft text-sm">
 		<p>&gt; GAMEPLAY: ANSWER QUESTIONS | VOTE ON RESPONSES | IDENTIFY THE AI</p>
 	</div>
 </div>
